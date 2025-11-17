@@ -1,0 +1,25 @@
+{
+  "type": "module",
+  "dependencies": {
+    "cassandra-driver": "^4.7.2",
+    "ioredis": "^5.8.2",
+    "neo4j-driver": "^6.0.1",
+    "pg": "^8.16.3",
+    "redis": "^5.9.0"
+  },
+  "scripts": {
+    "query:wide-column": "bash scripts/setup_cassandra.sh",
+    "query:key-value": "bash scripts/setup-postgres.sh",
+    "query:graph": "bash scripts/setup-graph.sh",
+    "query:document": "mongosh models/document-policy.js",
+    "query:modify-format": "mongosh models/modify-format-3.3.js",
+    "query:query-method": "mongosh models/query-method-3.3.js",
+    "query:hierarchical-integration": "mongosh models/hierarchical-integration-3.3.js",
+    "query:hierarchical-graph": "bash scripts/setup-graph-3.3.sh",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "start:postgres": "docker run --name pg -e POSTGRES_PASSWORD=pass -p 5432:5432 -d postgres:16",
+    "stop:postgres": "docker stop pg && docker rm pg",
+    "pg:setup": "npm run pg:start && npm run pg:wait && npm run pg:init"
+  }
+}
