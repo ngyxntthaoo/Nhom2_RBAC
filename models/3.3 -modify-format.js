@@ -16,7 +16,7 @@ db.employees.insertOne({
   name: "Alice",
   salary: 50000,
   department: "HR",
-  // Metadata kiểm soát truy cập
+  // kiểm soát truy cập
   access_control: {
     readable_by: ["HR_Managers", "Finance"],
     writable_by: ["HR_Managers"],
