@@ -8,38 +8,43 @@ DROP TABLE IF EXISTS company_objects;
 DROP TABLE IF EXISTS access_policy;
 
 -- ==========================================
--- 2. Column Family cho Subjects theo phân cấp Tổ chức
+-- 2. Column Family cho Subjects (Cấp 5: clearance_level)
 -- ==========================================
 CREATE TABLE organization_subjects (
+    -- C3: Row (Partition Key)
     department text,
     division text,
+    -- C3/C4: Clustering Columns / Column ID
     group_name text,
     username text,
+    -- C5: Value/Leaf Attributes
     user_id text,
-    full_name text,
     role text,
+    clearance_level int, -- Thuộc tính Cấp 5
     organization text,
     PRIMARY KEY ((department, division), group_name, username)
 );
 
 -- ==========================================
--- 3. Column Family cho Objects theo phân cấp Công ty
+-- 3. Column Family cho Objects (Cấp 5: classification)
 -- ==========================================
 CREATE TABLE company_objects (
+    -- C3: Row (Partition Key)
     company text,
     division text,
+    -- C3/C4: Clustering Columns / Column ID
     branch text,
     file_name text,
+    -- C5: Value/Leaf Attributes
     file_id text,
     file_type text,
-    file_size bigint,
-    created_date timestamp,
+    classification int, -- Thuộc tính Cấp 5
     organization text,
     PRIMARY KEY ((company, division), branch, file_name)
 );
 
 -- ==========================================
--- 4. Column Family cho Access Policy (SỬA LẠI PRIMARY KEY - ĐƠN GIẢN HÓA)
+-- 4. Column Family cho Access Policy (Lưu trữ ABAC Tuple)
 -- ==========================================
 CREATE TABLE access_policy (
     query_type text,
@@ -50,6 +55,13 @@ CREATE TABLE access_policy (
     allowed boolean,
     permission_type text,
     policy_id text,
+    -- Cấp 5: Thuộc tính Chủ thể (Chứa các nút lá của Tuple)
+    subject_attrs map<text, text>,
+    -- Cấp 5: Thuộc tính Đối tượng (Chứa các nút lá của Tuple)
+    object_attrs map<text, text>,
+    -- Cấp 5: Điều kiện bổ sung
+    conditions map<text, text>,
+    -- Các nút phân cấp
     department text,
     division text,
     group_name text,
@@ -58,116 +70,141 @@ CREATE TABLE access_policy (
     PRIMARY KEY ((query_type, query_scope, username), organization, file_name)
 );
 
--- ==========================================
--- 5. Thêm dữ liệu Subjects (5 users)
--- ==========================================
-INSERT INTO organization_subjects (department, division, group_name, username, user_id, full_name, role, organization) 
-VALUES ('it', 'engineering', 'dev', 'alice', 'user1', 'Alice Johnson', 'developer', 'ABCorg');
+-- Subject 1: Alice (Clearance Level 3)
+INSERT INTO organization_subjects (department, division, group_name, username, user_id, role, clearance_level, organization)
+VALUES ('it', 'engineering', 'dev', 'alice', 'user1', 'developer', 3, 'ABCorg');
 
-INSERT INTO organization_subjects (department, division, group_name, username, user_id, full_name, role, organization) 
-VALUES ('finance', 'finance_ops', 'payroll', 'eve', 'user5', 'Eve Davis', 'payroll_specialist', 'FinanceCorp');
+-- Object 1: product_spec.pdf (Classification 3)
+INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, classification, organization)
+VALUES ('ABC', 'engineering', 'hq', 'product_spec.pdf', 'file1', 'pdf', 3, 'ABCorg');
 
--- ==========================================
--- 6. Thêm dữ liệu Objects
--- ==========================================
-INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, file_size, created_date, organization) 
-VALUES ('ABC', 'engineering', 'hq', 'product_spec.pdf', 'file1', 'pdf', 1048576, '2024-01-15', 'ABCorg');
+-- Object 2: architecture.doc (Classification 5 - Rất bảo mật)
+INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, classification, organization)
+VALUES ('ABC', 'engineering', 'hq', 'architecture.doc', 'file2', 'doc', 5, 'ABCorg');
 
-INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, file_size, created_date, organization) 
-VALUES ('ABC', 'engineering', 'hq', 'architecture.doc', 'file2', 'doc', 2097152, '2024-01-20', 'ABCorg');
+-- Tuple 1: Alice - Cho phép Đọc product_spec.pdf
+INSERT INTO access_policy (
+    query_type, query_scope, username, organization, file_name,
+    allowed, permission_type, policy_id,
+    subject_attrs, object_attrs, conditions,
+    department, division, group_name, company, branch
+) VALUES (
+    'user', 'ABCorg', 'alice', 'ABCorg', 'product_spec.pdf',
+    true, 'read', 'policy1',
+    -- Cấp 5: Thuộc tính Chủ thể
+    {'username': 'alice', 'clearance': '3'},
+    -- Cấp 5: Thuộc tính Đối tượng
+    {'file': 'product_spec.pdf', 'classification': '3'},
+    {'clearance_check': 'passed'},
+    'it', 'engineering', 'dev', 'ABC', 'hq'
+);
 
-INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, file_size, created_date, organization) 
-VALUES ('Finance', 'finance_ops', 'audit', 'audit_log.txt', 'file4', 'txt', 131072, '2024-01-10', 'FinanceCorp');
+-- Tuple 2: Alice - Từ chối Đọc architecture.doc
+INSERT INTO access_policy (
+    query_type, query_scope, username, organization, file_name,
+    allowed, permission_type, policy_id,
+    subject_attrs, object_attrs, conditions,
+    department, division, group_name, company, branch
+) VALUES (
+    'user', 'ABCorg', 'alice', 'ABCorg', 'architecture.doc',
+    false, 'deny', 'policy2',
+    -- Cấp 5: Thuộc tính Chủ thể
+    {'username': 'alice', 'clearance': '3'},
+    -- Cấp 5: Thuộc tính Đối tượng
+    {'file': 'architecture.doc', 'classification': '5'},
+    {'clearance_check': 'failed', 'reason': 'insufficient_clearance'},
+    'it', 'engineering', 'dev', 'ABC', 'hq'
+);
 
-INSERT INTO company_objects (company, division, branch, file_name, file_id, file_type, file_size, created_date, organization) 
-VALUES ('Finance', 'finance_ops', 'audit', 'financial_report.pdf', 'file5', 'pdf', 2097152, '2024-01-25', 'FinanceCorp');
+-- Policy 12: Group 'dev' read product_spec.pdf
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('group', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy12', 'it', 'engineering', 'dev', 'ABC', 'hq', {'group': 'dev'}, {'classification': '3'});
 
--- ==========================================
--- 7. Thêm Access Policies (SỬA LẠI CHO PHÙ HỢP VỚI PRIMARY KEY MỚI)
--- ==========================================
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('user', 'ABCorg', 'alice', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy1', 'it', 'engineering', 'dev', 'ABC', 'hq');
+-- Policy 13: Group 'dev' read architecture.doc
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('group', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy13', 'it', 'engineering', 'dev', 'ABC', 'hq', {'group': 'dev'}, {'classification': '5'});
 
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('user', 'ABCorg', 'alice', 'ABCorg', 'architecture.doc', true, 'read', 'policy2', 'it', 'engineering', 'dev', 'ABC', 'hq');
+-- Policy 14: Department 'it' read product_spec.pdf
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('department', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy14', 'it', 'engineering', '', 'ABC', 'hq', {'department': 'it'}, {'classification': '3'});
 
--- Rule 2: Group-level - Nhóm dev có quyền read (dùng user rỗng cho group level)
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('group', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy3', 'it', 'engineering', 'dev', 'ABC', 'hq');
+-- Policy 15: Department 'it' read architecture.doc
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('department', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy15', 'it', 'engineering', '', 'ABC', 'hq', {'department': 'it'}, {'classification': '5'});
 
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('group', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy4', 'it', 'engineering', 'dev', 'ABC', 'hq');
+-- Policy 16: Division 'engineering' read product_spec.pdf
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('division', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy16', '', 'engineering', '', 'ABC', 'hq', {'division': 'engineering'}, {'classification': '3'});
 
--- Rule 3: Department-level - Department it có quyền
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('department', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy5', 'it', '', '', 'ABC', 'hq');
+-- Policy 17: Division 'engineering' read architecture.doc
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('division', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy17', '', 'engineering', '', 'ABC', 'hq', {'division': 'engineering'}, {'classification': '5'});
 
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('department', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy6', 'it', '', '', 'ABC', 'hq');
+-- Policy 18: User 'eve' read audit_log.txt (Giả định Eve có clearance 4, file classification 4)
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('user', 'FinanceCorp', 'eve', 'FinanceCorp', 'audit_log.txt', true, 'read', 'policy18', 'finance', 'finance_ops', 'payroll', 'Finance', 'audit', {'username': 'eve', 'clearance': '4'}, {'classification': '4'});
 
--- Rule 4: Division-level - Division engineering có quyền
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('division', 'ABCorg', '', 'ABCorg', 'product_spec.pdf', true, 'read', 'policy7', '', 'engineering', '', 'ABC', 'hq');
+-- Policy 19: User 'eve' read financial_report.pdf (Giả định Eve có clearance 4, file classification 4)
+INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch, subject_attrs, object_attrs)
+VALUES ('user', 'FinanceCorp', 'eve', 'FinanceCorp', 'financial_report.pdf', true, 'read', 'policy19', 'finance', 'finance_ops', 'payroll', 'Finance', 'audit', {'username': 'eve', 'clearance': '4'}, {'classification': '4'});
 
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('division', 'ABCorg', '', 'ABCorg', 'architecture.doc', true, 'read', 'policy8', '', 'engineering', '', 'ABC', 'hq');
+-- Lấy toàn bộ Tuple của Alice cho product_spec.pdf
+SELECT
+    username,               -- Chủ thể (C4)
+    file_name,              -- Đối tượng (C4)
+    permission_type,        -- Hành động
+    allowed,                -- Quyền
+    department, division, group_name, -- Nút Chủ thể (C3/C4)
+    company, branch,                  -- Nút Đối tượng (C3/C4)
+    subject_attrs,          -- Thuộc tính Nút lá Subject (C5)
+    object_attrs,           -- Thuộc tính Nút lá Object (C5)
+    conditions              -- Điều kiện (C5)
+FROM access_policy
+WHERE query_type = 'user'
+    AND query_scope = 'ABCorg'
+    AND username = 'alice'
+    AND organization = 'ABCorg'
+    AND file_name = 'product_spec.pdf';
 
--- Rule 5: User Eve - DENY product_spec.pdf trong ABCorg
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('user', 'FinanceCorp', 'eve', 'ABCorg', 'product_spec.pdf', false, 'deny', 'policy9', 'finance', 'finance_ops', 'payroll', 'ABC', 'hq');
 
--- Rule 6: User Eve - ALLOW financial_report.pdf trong FinanceCorp
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('user', 'FinanceCorp', 'eve', 'FinanceCorp', 'financial_report.pdf', true, 'read', 'policy10', 'finance', 'finance_ops', 'payroll', 'Finance', 'audit');
+-- Tìm tất cả các chính sách (Tuples) áp dụng cho chủ thể có clearance '3'
+SELECT
+    username,
+    file_name,
+    permission_type,
+    allowed,
+    subject_attrs['clearance'] AS subject_clearance,    -- Truy xuất thuộc tính Cấp 5
+    object_attrs['classification'] AS file_classification -- Truy xuất thuộc tính Cấp 5
+FROM access_policy
+WHERE subject_attrs CONTAINS '3'
+    AND subject_attrs CONTAINS KEY 'clearance'  -- ĐÃ SỬA LỖI TẠI ĐÂY
+ALLOW FILTERING;
 
--- Rule 7: User Eve - ALLOW audit_log.txt trong FinanceCorp
-INSERT INTO access_policy (query_type, query_scope, username, organization, file_name, allowed, permission_type, policy_id, department, division, group_name, company, branch) 
-VALUES ('user', 'FinanceCorp', 'eve', 'FinanceCorp', 'audit_log.txt', true, 'read', 'policy11', 'finance', 'finance_ops', 'payroll', 'Finance', 'audit');
-
--- ==========================================
--- 8. TRUY VẤN KIỂM TRA (SỬA LẠI - ĐƠN GIẢN HÓA)
--- ==========================================
-
--- Query 1: Kiểm tra tất cả quyền của user alice trong ABCorg organization đọc được file nào quản lý bởi branch ở ABC organization
-SELECT username, organization, file_name, company, branch, allowed, permission_type, policy_id
-FROM access_policy 
-WHERE query_type = 'user' 
-  AND query_scope = 'ABCorg' 
-  AND organization = 'ABCorg' 
-  AND username = 'alice';
-
--- Query 2: Kiểm tra quyền của group dev trong ABCorg
+-- Query 2: Kiểm tra quyền của group dev trong ABCorg (policy 12,13)
 SELECT username, group_name, organization, file_name, company, branch, allowed, permission_type, policy_id
 FROM access_policy 
 WHERE query_type = 'group' 
   AND query_scope = 'ABCorg'
   AND username = '';
 
--- Query 3: Kiểm tra quyền của department it trong ABCorg
+
+-- Query 3: Kiểm tra quyền của department it trong ABCorg (policy 14,15)
 SELECT username, group_name, department, organization, file_name, company, branch, allowed, permission_type, policy_id
 FROM access_policy 
 WHERE query_type = 'department' 
   AND query_scope = 'ABCorg'
   AND username = '';
 
--- Query 4: Kiểm tra quyền của division engineering trong ABCorg
+-- Query 4: Kiểm tra quyền của division engineering trong ABCorg (policy 16,17)
 SELECT division, organization, file_name, company, branch, allowed, permission_type, policy_id
 FROM access_policy 
 WHERE query_type = 'division' 
   AND query_scope = 'ABCorg'
   AND username = '';
 
--- Query 5: Kiểm tra tất cả quyền của user eve trong FinanceCorp
+-- Query 5: Kiểm tra tất cả quyền của user eve trong FinanceCorp (policy 18,19)
 SELECT username, organization, file_name, company, branch, allowed, permission_type, policy_id
 FROM access_policy 
 WHERE query_type = 'user' 
   AND query_scope = 'FinanceCorp'
   AND username = 'eve';
-
--- ==========================================
--- 9. TRUY VẤN PHÂN TÍCH TỔNG QUAN
--- ==========================================
-
--- Hiển thị tất cả policies để kiểm tra
-SELECT username, group_name, department, organization, file_name, branch,company, allowed, permission_type, policy_id
-FROM access_policy;
