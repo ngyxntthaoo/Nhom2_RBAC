@@ -1,0 +1,12 @@
+# Base requirements from original setup
+jupyter
+notebook
+ipywidgets
+# Added for MongoDB and Gemini integration
+pymongo
+google-generativeai
+python-dotenv
+sqlalchemy
+pandas
+psycopg2-binary
+cryptography
