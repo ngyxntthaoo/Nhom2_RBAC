@@ -17,19 +17,11 @@ services:
   mongo-secondary:
     image: mongo:5.0
     container_name: mongo-secondary
-    command: [ "bash", "-c", "apt-get update && apt-get install -y iproute2 && exec mongod --replSet rs0 --bind_ip_all" ]
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27028:27017"
     volumes:
       - mongo-secondary-data:/data/db
-    # Giới hạn tài nguyên cho secondary node để giả lập máy yếu hơn
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    # Bật cờ privileged để cho phép sử dụng lệnh tc (traffic control)
-    privileged: true
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
       interval: 10s
@@ -54,7 +46,7 @@ services:
       - "--port"
       - "27017"
       - "--eval"
-      - 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "mongo-primary:27017", priority: 2}, {_id: 1, host: "mongo-secondary:27017", priority: 1}]})'
+      - 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "mongo-primary:27017", priority: 2}, {_id: 1, host: "mongo-secondary:27017", priority: 0, secondaryDelaySecs: 20, hidden: false}]})'
 
 volumes:
   mongo-primary-data:
