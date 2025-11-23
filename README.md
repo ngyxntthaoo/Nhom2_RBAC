@@ -187,7 +187,6 @@ Bước 3: Chạy chương trình
 | 3.2-key-value.ipynb     | chạy trực tiếp trên file  |
 | 3.2-wide-column.cql      | ```npm run query:wide-column``` |
 
-**So sánh Bảo mật: PostgreSQL vs. MongoDB** 
 | File | Mô tả | Cách sử dụng |
 |------|-------|-------------|
 | **requirements.txt** | Danh sách thư viện Python cần thiết | `pip install -r requirements.txt` |
